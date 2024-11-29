@@ -1,5 +1,5 @@
 
-import { forwardRef, useEffect, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { Flex } from "../flex";
 import { Button, Divider, Input, Spin, Switch, Table, Tabs } from "antd";
 import { useUpdate } from "../home";
@@ -7,6 +7,7 @@ import { Service } from "../service";
 import { Base64 } from "js-base64";
 import TextArea from "antd/es/input/TextArea";
 import { ClearOutlined, ClockCircleOutlined } from "@ant-design/icons";
+import useMessage from "antd/es/message/useMessage";
 
 export interface IProxyRecord {
     key: number,
@@ -55,6 +56,10 @@ const pick = (args: any[]) => {
 }
 
 export const Settings = forwardRef<{}, {}>((props, ref) => {
+
+    const [messageApi, contextHolder] = useMessage();
+
+    const [enableProxy, updateEnableProxy] = useUpdate<boolean>(true);
     const [proxyRecords, updateProxyRecords, proxyRecordsRef] = useUpdate<IProxyRecord[]>([]);
     const [proxyCurrent, updateProxyCurrent, proxyCurrentRef] = useUpdate<number>(-1);
     const [proxySubscribers, updateProxySubscribers, proxySubscribersRef] = useUpdate<IProxySubscriber[]>([]);
@@ -62,6 +67,8 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
     const [features, updateFeatures, featuresRef] = useUpdate<IFeature[]>([]);
     const [aesEncryptValue, updateAesEncryptValue, aesEncryptValueRef] = useUpdate<string>('');
     const [loading, updateLoading, loadingRef] = useUpdate<boolean>(false);
+    const [proxyPort, updateProxyPort, proxyPortRef] = useUpdate<string>('');
+    const [autoGitProxy, updateAutoGitProxy, autoGitProxyRef] = useUpdate<boolean>(false);
     const self = useRef({
         settings: {} as any,
         getProxy() {
@@ -69,6 +76,24 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
                 self.current.settings.proxy = {};
             }
             return self.current.settings.proxy;
+        },
+        getEnableProxy() {
+            return self.current.settings?.EnableProxy ?? true;
+        },
+        setEnableProxy(enable: boolean) {
+            self.current.settings.EnableProxy = enable;
+        },
+        getProxyPort() {
+            return self.current.settings?.ProxyPort ?? "";
+        },
+        setProxyPort(port: string) {
+            self.current.settings.ProxyPort = port;
+        },
+        getAutoGitProxy() {
+            return self.current.settings?.AutoGitProxy ?? false;
+        },
+        setAutoGitProxy(auto: boolean) {
+            self.current.settings.AutoGitProxy = auto;
         },
         getProxyUrls(): string[] {
             if (self.current.getProxy().urls === undefined) {
@@ -142,6 +167,7 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
                 tasks.push((async () => {
                     let response = await Service.httpGet(tempItem.url);
                     tempItem.tip = "Checking";
+                    updateProxySubscribers([...proxySubscribersRef.current]);
                     if (response.success) {
                         let data = response.data;
                         if (data) {
@@ -150,7 +176,10 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
                             }
                         }
                     }
-                    if(tempItem.tip === "Checking") {
+                    else {
+                        tempItem.tip = response.message;
+                    }
+                    if (tempItem.tip === "Checking") {
                         tempItem.tip = "Normal";
                     }
                     updateProxySubscribers([...proxySubscribersRef.current]);
@@ -215,10 +244,15 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
                 }));
             }
         },
+        async refreshProxyPort() {
+            updateProxyPort(self.current.getProxyPort());
+            updateEnableProxy(self.current.getEnableProxy());
+        },
         async refresh() {
             let msg = await Service.getSettings();
             if (msg.success) {
                 self.current.settings = msg.data;
+                await self.current.refreshProxyPort();
                 await self.current.refreshProxyUrls();
                 await self.current.refreshProxySubscribers();
                 await self.current.refreshFeatures();
@@ -306,8 +340,13 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
                 width: '100vw',
                 height: '100vh'
             }}>
+                {contextHolder}
                 <Spin spinning={loading} fullscreen></Spin>
                 <Tabs tabPosition='left' items={[
+                    {
+                        key: 'proxy-port',
+                        label: 'Proxy Port',
+                    },
                     {
                         key: 'proxy-urls',
                         label: 'Proxy Urls',
@@ -325,6 +364,9 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
                         label: 'Tools',
                     }
                 ]} onChange={key => {
+                    if (key === 'proxy-port') {
+                        document.getElementById('link-proxy-port')?.scrollIntoView();
+                    }
                     if (key === 'proxy-urls') {
                         document.getElementById('link-proxy-urls')?.scrollIntoView();
                     }
@@ -339,10 +381,71 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
                     }
                 }}></Tabs>
                 <Flex style={{ width: 0, flex: 1, overflowY: 'auto' }} direction='column' >
+                    {render.proxyPort()}
                     {render.proxyUrls()}
                     {render.proxySubscribers()}
                     {render.features()}
                     {render.tools()}
+                </Flex>
+            </Flex>
+        },
+        proxyPort: () => {
+            return <Flex id="link-proxy-port" direction='column'>
+                <h3>{"Proxy Port"}</h3>
+                <Flex spacing={8} verticalCenter>
+                    <Button type='text' style={{ minWidth: '12em', justifyContent: 'flex-start' }}>{"Proxy Port:"}</Button>
+                    <Input style={{
+                        maxWidth: '8em'
+                    }} value={proxyPort} onChange={e => {
+                        updateProxyPort(e.target.value);
+                    }}></Input>
+                    <Button onClick={async () => {
+                        try {
+                            updateLoading(true);
+                            let portNumber = Number(proxyPortRef.current);
+                            if (Number.isNaN(portNumber)) {
+                                throw new Error("Invalid port number");
+                            }
+
+                            self.current.setProxyPort(proxyPortRef.current);
+                            await self.current.save();
+                            messageApi.success("Please restart the application to take effect");
+                        }
+                        catch (e: any) {
+                            messageApi.error(e?.message ?? e.toString());
+                        }
+                        updateLoading(false);
+                    }}>{"Save"}</Button>
+                </Flex>
+                <Flex spacing={8} verticalCenter>
+                    <Button type='text' style={{ minWidth: '12em', justifyContent: 'flex-start' }}>{"Enable Proxy:"}</Button>
+                    <Switch checked={enableProxy} onChange={async checked => {
+                        try {
+                            updateLoading(true);
+                            self.current.setEnableProxy(checked);
+                            await self.current.save();
+                            updateEnableProxy(checked);
+                            messageApi.success("Please restart the application to take effect");
+                        } catch (e: any) {
+                            messageApi.error(e?.message ?? e.toString());
+                        }
+                        updateLoading(false);
+                    }} ></Switch>
+                </Flex>
+                <Flex spacing={8} verticalCenter>
+                    <Button type='text' style={{ minWidth: '12em', justifyContent: 'flex-start' }}>{"Auto Git Proxy:"}</Button>
+                    <Switch checked={autoGitProxy} onChange={async checked => {
+                        try {
+                            updateLoading(true);
+                            self.current.setAutoGitProxy(checked);
+                            await self.current.save();
+                            updateAutoGitProxy(checked);
+                            messageApi.success("Please restart the application to take effect");
+                        } catch (e: any) {
+                            messageApi.error(e?.message ?? e.toString());
+                        }
+                        updateLoading(false);
+                    }} ></Switch>
                 </Flex>
             </Flex>
         },
@@ -669,6 +772,9 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
         proxyUseSort,
         features,
         aesEncryptValue,
-        loading
+        loading,
+        proxyPort,
+        enableProxy,
+        autoGitProxy
     ]);
 })
