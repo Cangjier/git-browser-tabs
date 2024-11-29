@@ -105,6 +105,10 @@ export class Service {
         let response = await axios.post('/api/v1/ping', { vmessUrl });
         return response.data;
     }
+    static async httpGet(url: string) {
+        let response = await axios.post('/api/v1/httpGet', { url });
+        return response.data;
+    }
     static async bookmarks() {
         let response = await axios.get('/api/v1/bookmarks');
         return response.data;

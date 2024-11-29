@@ -6,7 +6,7 @@ import { useUpdate } from "../home";
 import { Service } from "../service";
 import { Base64 } from "js-base64";
 import TextArea from "antd/es/input/TextArea";
-import { ClearOutlined } from "@ant-design/icons";
+import { ClearOutlined, ClockCircleOutlined } from "@ant-design/icons";
 
 export interface IProxyRecord {
     key: number,
@@ -23,6 +23,7 @@ export interface IProxySubscriber {
     key: number,
     url: string,
     isEdit?: boolean,
+    tip?: string
 }
 
 export interface IFeature {
@@ -134,6 +135,29 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
             await Promise.all(tasks);
             self.current.isListPing = false;
         },
+        async checkSubscribers() {
+            let tasks = [];
+            for (let item of proxySubscribersRef.current) {
+                let tempItem = item;
+                tasks.push((async () => {
+                    let response = await Service.httpGet(tempItem.url);
+                    tempItem.tip = "Checking";
+                    if (response.success) {
+                        let data = response.data;
+                        if (data) {
+                            if (data.includes("Cloudflare")) {
+                                tempItem.tip = "Need to bypass Cloudflare";
+                            }
+                        }
+                    }
+                    if(tempItem.tip === "Checking") {
+                        tempItem.tip = "Normal";
+                    }
+                    updateProxySubscribers([...proxySubscribersRef.current]);
+                })());
+            }
+            await Promise.all(tasks);
+        },
         async refreshProxyUrls() {
             let proxyUrls = self.current.getProxyUrls();
             if (proxyUrls.length === 0) {
@@ -151,7 +175,6 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
                         url: item,
                     }
                 }));
-                self.current.listPing();
             }
             updateProxyCurrent(self.current.getProxyCurrent());
             updateProxyUseSort(self.current.getProxyUseSort());
@@ -350,6 +373,9 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
                     <Button icon={<ClearOutlined />} type="text" onClick={async () => {
                         await self.current.clearProxyUrls();
                     }}>{"Clear"}</Button>
+                    <Button icon={<ClockCircleOutlined />} type="text" onClick={async () => {
+                        await self.current.listPing();
+                    }}>{"Ping"}</Button>
                 </Flex>
                 <Table dataSource={proxyRecords}
                     scroll={{ x: 'max-content' }}
@@ -458,9 +484,26 @@ export const Settings = forwardRef<{}, {}>((props, ref) => {
         proxySubscribers: () => {
             return <Flex id="link-proxy-subscribers" direction='column'>
                 <h3>{"Proxy Subscribers"}</h3>
+                <Flex direction="row">
+                    <Button icon={<ClockCircleOutlined />} type="text" onClick={async () => {
+                        await self.current.checkSubscribers();
+                    }}>{"Check"}</Button>
+                </Flex>
                 <Table dataSource={proxySubscribers}
                     scroll={{ x: 'max-content' }}
                     columns={[
+                        {
+                            key: 'tip',
+                            title: 'Tip',
+                            render: (record: IProxySubscriber) => {
+                                if (record.tip) {
+                                    return record.tip;
+                                }
+                                else {
+                                    return "";
+                                }
+                            }
+                        },
                         {
                             key: 'url',
                             title: 'Url',
